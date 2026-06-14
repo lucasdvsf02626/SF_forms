@@ -1,0 +1,19 @@
+# WordPress / secrets
+wp-config.php
+.env
+.env.*
+*.log
+
+# Dependencies / build
+node_modules/
+vendor/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Archives
+*.zip

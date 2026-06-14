@@ -1,0 +1,66 @@
+/**
+ * SF Lead Form — admin styles (settings + logs).
+ */
+.sf-lf-admin .sf-lf-test-result {
+	display: inline-block;
+	margin-left: 10px;
+	font-weight: 600;
+	vertical-align: middle;
+}
+
+.sf-lf-admin .sf-lf-test-result.is-pending {
+	color: #646970;
+}
+
+.sf-lf-admin .sf-lf-test-result.is-ok {
+	color: #138a36;
+}
+
+.sf-lf-admin .sf-lf-test-result.is-error {
+	color: #b32d2e;
+}
+
+.sf-lf-admin .sf-lf-saved {
+	color: #138a36;
+	font-weight: 600;
+}
+
+.sf-lf-admin .sf-lf-help {
+	max-width: 760px;
+	line-height: 1.6;
+}
+
+.sf-lf-admin .sf-lf-help code,
+.sf-lf-admin .sf-lf-settings code {
+	background: #f0f0f1;
+	padding: 1px 6px;
+	border-radius: 4px;
+}
+
+.sf-lf-admin .sf-lf-badge {
+	display: inline-block;
+	padding: 2px 8px;
+	border-radius: 999px;
+	font-size: 12px;
+	font-weight: 600;
+	white-space: nowrap;
+}
+
+.sf-lf-admin .sf-lf-badge--ok {
+	background: #e6f4ea;
+	color: #138a36;
+}
+
+.sf-lf-admin .sf-lf-badge--err {
+	background: #fce8e8;
+	color: #b32d2e;
+}
+
+.sf-lf-admin .sf-lf-badge--spam {
+	background: #f3f0e6;
+	color: #8a6d13;
+}
+
+.sf-lf-admin .sf-lf-logs td {
+	vertical-align: middle;
+}
