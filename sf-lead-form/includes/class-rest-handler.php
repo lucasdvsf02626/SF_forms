@@ -222,6 +222,7 @@ class SF_Lead_Form_REST_Handler {
 			'manufacturing_experience' => $d['manufacturing_experience'],
 			'unit_quantity'            => $d['unit_quantity'],
 			'manufacturing_budget'     => $d['manufacturing_budget'],
+			'journey_stage'            => $d['journey_stage'],
 			// Lead context.
 			'lifecyclestage'           => 'lead',
 			'hs_lead_status'           => 'NEW',

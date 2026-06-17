@@ -67,19 +67,22 @@ SF_forms/
 
 ### 2. HubSpot — create the 5 custom properties (do this first)
 
-**Settings → Properties → Contact properties → Create property.** Type = **Single-line text** for all:
+**Settings → Properties → Contact properties → Create property.**
 
-| Internal name | Label | Used for |
+| Internal name | HubSpot field type | Values the form sends |
 |---|---|---|
-| `enquiry_type` | Enquiry Type | White Label vs Private Label |
-| `product_type` | Product Type | Powder / Capsule / Tablet / LiquidGel / Gummy |
-| `manufacturing_experience` | Manufacturing Experience | First product vs existing brand |
-| `unit_quantity` | Unit Quantity | 200 … 10000+ |
-| `manufacturing_budget` | Manufacturing Budget | £500–£2,000 … £100,000+ |
+| `enquiry_type` | Dropdown select | Ready-Made Supplements (White Label) / Bespoke Supplement (Private Label) |
+| `product_type` | Multiple checkboxes | Capsules / Powders / Gummies / Softgels / Duocaps / Licaps / Beadlets |
+| `manufacturing_experience` | Single-line text | first_product / existing_products |
+| `unit_quantity` | Single-line text | 200 … 10000+ |
+| `manufacturing_budget` | Single-line text | 500-2000 … 100000+ |
+| `journey_stage` | Single-line text | Exploring an idea / Actively researching ingredients & costs / Formulation & business plan ready |
 
 > The standard properties `firstname`, `lastname`, `email`, `phone`, `company`, `message`, `lifecyclestage`, `hs_lead_status` already exist. `lead_source` is set to `Website Form` (optional custom property — created or skipped automatically).
 >
-> **If you skip this step**, leads still save: the plugin detects HubSpot's “property does not exist” (400) response, strips the unknown fields, retries, and logs exactly which fields were dropped.
+> `enquiry_type` and `product_type` already exist in portal `14516909` as **enumerated** properties (Dropdown / Multiple checkboxes); the form's option values exactly match their allowed option **internal values**, so submissions validate cleanly.
+>
+> **If a property is missing, or a value isn't an allowed option**, leads still save: the plugin detects HubSpot's 400 response (`PROPERTY_DOESNT_EXIST` *or* `INVALID_OPTION`), strips the offending field, retries, and logs exactly which fields were dropped.
 
 ### 3. WordPress — install & configure
 
@@ -92,7 +95,7 @@ SF_forms/
 
 ## Customising the form
 
-- **Reorder / edit steps:** everything lives in the `STEPS` array at the top of `public/sf-lead-form.js`. To match the *live screenshots* (Contact collected **last**), move the `contact` entry to the end of `STEPS`.
+- **Reorder / edit steps:** everything lives in the `STEPS` array at the top of `public/sf-lead-form.js`. Default order mirrors the live form: enquiry → product → units → budget → experience → journey → contact.
 - **Solid-red option cards** (screenshot look): add the class `sf-lf--solid-cards` to the `.sf-lf` wrapper. Default is white cards / red-when-selected (per spec).
 - **Colours / sizing:** override the CSS custom properties on `.sf-lf` (e.g. `--sf-red`, `--sf-bg`, `--sf-card-max`) in your theme.
 
@@ -122,11 +125,12 @@ curl -X POST "https://YOURSITE.com/wp-json/sf-lead-form/v1/submit?key=YOUR_SECRE
     "phone": "+441234567890",
     "company_name": "Test Nutrition Ltd",
     "product_brief": "Looking for private label capsules",
-    "enquiry_type": "private_label",
-    "product_type": "capsule",
+    "enquiry_type": "Bespoke Supplement (Private Label)",
+    "product_type": "Capsules",
     "manufacturing_experience": "first_product",
     "unit_quantity": "1000",
-    "manufacturing_budget": "5000-10000"
+    "manufacturing_budget": "5000-10000",
+    "journey_stage": "Actively researching ingredients & costs"
   }'
 ```
 

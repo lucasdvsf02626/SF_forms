@@ -283,7 +283,10 @@ class SF_Lead_Form_HubSpot_Service {
 	}
 
 	/**
-	 * Parse the names of properties HubSpot reported as non-existent.
+	 * Parse the names of properties HubSpot rejected — either properties that do
+	 * not exist, or values that are not one of an enumeration property's allowed
+	 * options. Either way the offending property is stripped and the contact is
+	 * retried so a CRM mismatch never costs a lead.
 	 *
 	 * @param string $raw Raw response body.
 	 * @return array<int,string>
@@ -300,6 +303,14 @@ class SF_Lead_Form_HubSpot_Service {
 		}
 		if ( false !== stripos( $s, 'PROPERTY_DOESNT_EXIST' ) && preg_match_all( '/"name"\s*:\s*"([^"]+)"/', $s, $m2 ) ) {
 			$names = array_merge( $names, $m2[1] );
+		}
+
+		// Enumeration mismatch: a value sent for a dropdown/checkbox property is
+		// not one of its allowed options. Strip that property so the lead still
+		// saves (mirrors the missing-property recovery above).
+		if ( ( false !== stripos( $s, 'INVALID_OPTION' ) || false !== stripos( $s, 'was not one of the allowed options' ) )
+			&& preg_match_all( '/"name"\s*:\s*"([^"]+)"/', $s, $m3 ) ) {
+			$names = array_merge( $names, $m3[1] );
 		}
 
 		return array_values( array_unique( $names ) );

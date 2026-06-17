@@ -14,8 +14,11 @@ class SF_Lead_Form_Validator {
 
 	/** Allowed enum values per choice field (server-side whitelist). */
 	private const ENUMS = array(
-		'enquiry_type'             => array( 'white_label', 'private_label' ),
-		'product_type'             => array( 'powder', 'capsule', 'tablet', 'liquidgel', 'gummy' ),
+		'enquiry_type'             => array(
+			'Ready-Made Supplements (White Label)',
+			'Bespoke Supplement (Private Label)',
+		),
+		'product_type'             => array( 'Capsules', 'Powders', 'Gummies', 'Softgels', 'Duocaps', 'Licaps', 'Beadlets' ),
 		'manufacturing_experience' => array( 'first_product', 'existing_products' ),
 		'unit_quantity'            => array( '200', '500', '750', '1000', '2000', '5000', '10000+' ),
 		'manufacturing_budget'     => array(
@@ -27,6 +30,11 @@ class SF_Lead_Form_Validator {
 			'30000-50000',
 			'50000-100000',
 			'100000+',
+		),
+		'journey_stage'            => array(
+			'Exploring an idea',
+			'Actively researching ingredients & costs',
+			'Formulation & business plan ready',
 		),
 	);
 

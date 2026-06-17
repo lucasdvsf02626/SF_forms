@@ -16,20 +16,14 @@
 	 * ------------------------------------------------------------------ */
 	var STEPS = [
 		{
-			id: 'contact',
-			type: 'contact',
-			title: 'Contact Information',
-			cta: 'CONTINUE'
-		},
-		{
 			id: 'enquiry_type',
 			type: 'choice',
 			key: 'enquiry_type',
 			title: 'What would you like to enquire about?',
 			autoAdvance: true,
 			options: [
-				{ value: 'white_label', label: 'Ready-Made Supplements (White Label)' },
-				{ value: 'private_label', label: 'Bespoke Supplement (Private Label)' }
+				{ value: 'Ready-Made Supplements (White Label)', label: 'Ready-Made Supplements (White Label)' },
+				{ value: 'Bespoke Supplement (Private Label)', label: 'Bespoke Supplement (Private Label)' }
 			]
 		},
 		{
@@ -39,23 +33,13 @@
 			title: 'Product Type',
 			autoAdvance: true,
 			options: [
-				{ value: 'powder', label: 'Powder' },
-				{ value: 'capsule', label: 'Capsule' },
-				{ value: 'tablet', label: 'Tablet' },
-				{ value: 'liquidgel', label: 'LiquidGel' },
-				{ value: 'gummy', label: 'Gummy' }
-			]
-		},
-		{
-			id: 'manufacturing_experience',
-			type: 'choice',
-			key: 'manufacturing_experience',
-			title: 'Have you manufactured supplements before?',
-			autoAdvance: false,
-			cta: 'CONTINUE',
-			options: [
-				{ value: 'first_product', label: 'This will be our first product to market' },
-				{ value: 'existing_products', label: 'We currently have supplement products on the market' }
+				{ value: 'Capsules', label: 'Capsules' },
+				{ value: 'Powders', label: 'Powders' },
+				{ value: 'Gummies', label: 'Gummies' },
+				{ value: 'Softgels', label: 'Softgels' },
+				{ value: 'Duocaps', label: 'Duocaps' },
+				{ value: 'Licaps', label: 'Licaps' },
+				{ value: 'Beadlets', label: 'Beadlets' }
 			]
 		},
 		{
@@ -91,6 +75,36 @@
 				{ value: '50000-100000', label: '£50,000 – £100,000' },
 				{ value: '100000+', label: '£100,000+' }
 			]
+		},
+		{
+			id: 'manufacturing_experience',
+			type: 'choice',
+			key: 'manufacturing_experience',
+			title: 'Have you manufactured supplements before?',
+			autoAdvance: false,
+			cta: 'CONTINUE',
+			options: [
+				{ value: 'first_product', label: 'This will be our first product to market' },
+				{ value: 'existing_products', label: 'We currently have supplement products on the market' }
+			]
+		},
+		{
+			id: 'journey_stage',
+			type: 'choice',
+			key: 'journey_stage',
+			title: 'Where are you in your journey?',
+			autoAdvance: true,
+			options: [
+				{ value: 'Exploring an idea', label: 'Exploring an idea' },
+				{ value: 'Actively researching ingredients & costs', label: 'Actively researching ingredients & costs' },
+				{ value: 'Formulation & business plan ready', label: 'Formulation & business plan ready' }
+			]
+		},
+		{
+			id: 'contact',
+			type: 'contact',
+			title: 'Contact Information',
+			cta: 'CONTINUE'
 		}
 	];
 
@@ -130,6 +144,7 @@
 			manufacturing_experience: '',
 			unit_quantity: '',
 			manufacturing_budget: '',
+			journey_stage: '',
 			_phoneCode: '+44',
 			_phoneNumber: ''
 		}
@@ -461,6 +476,7 @@
 			manufacturing_experience: d.manufacturing_experience,
 			unit_quantity: d.unit_quantity,
 			manufacturing_budget: d.manufacturing_budget,
+			journey_stage: d.journey_stage,
 			company_website: hp ? hp.value : ''
 		};
 	}
@@ -533,7 +549,8 @@
 				el('dt', { text: 'Enquiry' }), el('dd', { text: labelFor('enquiry_type', d.enquiry_type) }),
 				el('dt', { text: 'Product type' }), el('dd', { text: labelFor('product_type', d.product_type) }),
 				el('dt', { text: 'Quantity' }), el('dd', { text: labelFor('unit_quantity', d.unit_quantity) }),
-				el('dt', { text: 'Budget' }), el('dd', { text: labelFor('manufacturing_budget', d.manufacturing_budget) })
+				el('dt', { text: 'Budget' }), el('dd', { text: labelFor('manufacturing_budget', d.manufacturing_budget) }),
+				el('dt', { text: 'Stage' }), el('dd', { text: labelFor('journey_stage', d.journey_stage) })
 			])
 		]);
 
