@@ -75,6 +75,25 @@ defined( 'ABSPATH' ) || exit;
 				</p>
 			</td>
 		</tr>
+
+		<tr>
+			<th scope="row">
+				<label for="sf_lf_alert_email"><?php esc_html_e( 'Alert email', 'sf-lead-form' ); ?></label>
+			</th>
+			<td>
+				<input
+					type="email"
+					id="sf_lf_alert_email"
+					name="<?php echo esc_attr( SF_LEAD_FORM_OPT_ALERT_EMAIL ); ?>"
+					value="<?php echo esc_attr( $alert_email ); ?>"
+					class="regular-text"
+					placeholder="<?php echo esc_attr( (string) get_option( 'admin_email' ) ); ?>"
+				>
+				<p class="description">
+					<?php esc_html_e( 'Where to send alerts if a lead fails to reach HubSpot, or the daily connection check fails. Defaults to the site admin email if left blank.', 'sf-lead-form' ); ?>
+				</p>
+			</td>
+		</tr>
 		</tbody>
 	</table>
 

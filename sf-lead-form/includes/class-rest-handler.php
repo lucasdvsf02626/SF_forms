@@ -16,6 +16,8 @@ class SF_Lead_Form_REST_Handler {
 	private SF_Lead_Form_Validator $validator;
 	private SF_Lead_Form_HubSpot_Service $hubspot;
 	private SF_Lead_Form_Logger $logger;
+	private SF_Lead_Form_Lead_Store $lead_store;
+	private SF_Lead_Form_Notifier $notifier;
 
 	private const RATE_LIMIT   = 5;               // Max submissions...
 	private const RATE_WINDOW  = 10 * MINUTE_IN_SECONDS; // ...per IP per window.
@@ -23,18 +25,24 @@ class SF_Lead_Form_REST_Handler {
 	/**
 	 * Constructor.
 	 *
-	 * @param SF_Lead_Form_Validator       $validator Validator.
-	 * @param SF_Lead_Form_HubSpot_Service $hubspot   HubSpot service.
-	 * @param SF_Lead_Form_Logger          $logger    Logger.
+	 * @param SF_Lead_Form_Validator       $validator  Validator.
+	 * @param SF_Lead_Form_HubSpot_Service $hubspot    HubSpot service.
+	 * @param SF_Lead_Form_Logger          $logger     Logger.
+	 * @param SF_Lead_Form_Lead_Store      $lead_store Local lead store / retry queue.
+	 * @param SF_Lead_Form_Notifier        $notifier   Admin alert notifier.
 	 */
 	public function __construct(
 		SF_Lead_Form_Validator $validator,
 		SF_Lead_Form_HubSpot_Service $hubspot,
-		SF_Lead_Form_Logger $logger
+		SF_Lead_Form_Logger $logger,
+		SF_Lead_Form_Lead_Store $lead_store,
+		SF_Lead_Form_Notifier $notifier
 	) {
-		$this->validator = $validator;
-		$this->hubspot   = $hubspot;
-		$this->logger    = $logger;
+		$this->validator  = $validator;
+		$this->hubspot    = $hubspot;
+		$this->logger     = $logger;
+		$this->lead_store = $lead_store;
+		$this->notifier   = $notifier;
 	}
 
 	/**
@@ -164,9 +172,13 @@ class SF_Lead_Form_REST_Handler {
 
 		$properties = $this->map_to_hubspot( $result['data'] );
 
+		// Capture-first: store the full lead locally BEFORE calling HubSpot, so a
+		// HubSpot failure can never lose it — it stays "pending" and is retried by cron.
+		$lead_id = $this->lead_store->insert( $properties );
+
 		$hs = $this->hubspot->create_or_update_contact( $properties );
 
-		// Log (no raw PII).
+		// Masked audit log (no raw PII).
 		$this->logger->log(
 			array(
 				'email'  => $result['data']['email'],
@@ -177,22 +189,33 @@ class SF_Lead_Form_REST_Handler {
 			)
 		);
 
-		if ( empty( $hs['success'] ) ) {
+		if ( ! empty( $hs['success'] ) ) {
+			if ( $lead_id ) {
+				$this->lead_store->mark_synced( $lead_id, (string) ( $hs['vid'] ?? '' ) );
+			}
 			return new WP_REST_Response(
 				array(
-					'success' => false,
-					'code'    => (string) ( $hs['code'] ?? 'error' ),
-					'error'   => (string) ( $hs['error'] ?? __( 'Something went wrong. Please try again.', 'sf-lead-form' ) ),
+					'success' => true,
+					'action'  => (string) ( $hs['action'] ?? 'created' ),
+					'vid'     => (string) ( $hs['vid'] ?? '' ),
 				),
 				200
 			);
 		}
 
+		// HubSpot failed — but the lead is saved locally. Flag it for retry, alert the
+		// admin (throttled), and STILL confirm success to the visitor; the hourly retry
+		// cron (or a manual "Retry now") will sync it once HubSpot is reachable again.
+		$error = (string) ( $hs['error'] ?? __( 'Something went wrong.', 'sf-lead-form' ) );
+		if ( $lead_id ) {
+			$this->lead_store->record_failure( $lead_id, $error );
+		}
+		$this->notifier->alert_failed_lead( $properties, $error );
+
 		return new WP_REST_Response(
 			array(
 				'success' => true,
-				'action'  => (string) ( $hs['action'] ?? 'created' ),
-				'vid'     => (string) ( $hs['vid'] ?? '' ),
+				'action'  => 'queued',
 			),
 			200
 		);

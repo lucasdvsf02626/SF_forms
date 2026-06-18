@@ -15,20 +15,24 @@ class SF_Lead_Form_Admin {
 
 	private SF_Lead_Form_HubSpot_Service $hubspot;
 	private SF_Lead_Form_Logger $logger;
+	private SF_Lead_Form_Lead_Store $lead_store;
 
 	private const MENU_SLUG     = 'sf-lead-form';
 	private const SETTINGS_GROUP = 'sf_lead_form_settings';
 	private const AJAX_ACTION    = 'sf_lead_form_test_connection';
+	private const LEAD_ACTION    = 'sf_lead_form_lead_action';
 
 	/**
 	 * Constructor.
 	 *
-	 * @param SF_Lead_Form_HubSpot_Service $hubspot HubSpot service.
-	 * @param SF_Lead_Form_Logger          $logger  Logger.
+	 * @param SF_Lead_Form_HubSpot_Service $hubspot    HubSpot service.
+	 * @param SF_Lead_Form_Logger          $logger     Logger.
+	 * @param SF_Lead_Form_Lead_Store      $lead_store Lead store / retry queue.
 	 */
-	public function __construct( SF_Lead_Form_HubSpot_Service $hubspot, SF_Lead_Form_Logger $logger ) {
-		$this->hubspot = $hubspot;
-		$this->logger  = $logger;
+	public function __construct( SF_Lead_Form_HubSpot_Service $hubspot, SF_Lead_Form_Logger $logger, SF_Lead_Form_Lead_Store $lead_store ) {
+		$this->hubspot    = $hubspot;
+		$this->logger     = $logger;
+		$this->lead_store = $lead_store;
 	}
 
 	/**
@@ -39,6 +43,7 @@ class SF_Lead_Form_Admin {
 		add_action( 'admin_init', array( $this, 'register_settings' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_assets' ) );
 		add_action( 'wp_ajax_' . self::AJAX_ACTION, array( $this, 'ajax_test_connection' ) );
+		add_action( 'admin_post_' . self::LEAD_ACTION, array( $this, 'handle_lead_action' ) );
 		add_filter( 'plugin_action_links_' . SF_LEAD_FORM_BASENAME, array( $this, 'action_links' ) );
 	}
 
@@ -96,6 +101,15 @@ class SF_Lead_Form_Admin {
 			array(
 				'type'              => 'string',
 				'sanitize_callback' => 'sanitize_text_field',
+				'default'           => '',
+			)
+		);
+		register_setting(
+			self::SETTINGS_GROUP,
+			SF_LEAD_FORM_OPT_ALERT_EMAIL,
+			array(
+				'type'              => 'string',
+				'sanitize_callback' => 'sanitize_email',
 				'default'           => '',
 			)
 		);
@@ -180,7 +194,7 @@ class SF_Lead_Form_Admin {
 	}
 
 	/**
-	 * Render the admin page (tabbed: Settings / Logs).
+	 * Render the admin page (tabbed: Settings / Logs / Failed leads).
 	 */
 	public function render_page(): void {
 		if ( ! current_user_can( 'manage_options' ) ) {
@@ -188,20 +202,25 @@ class SF_Lead_Form_Admin {
 		}
 
 		$tab = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : 'settings'; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-		$tab = in_array( $tab, array( 'settings', 'logs' ), true ) ? $tab : 'settings';
+		$tab = in_array( $tab, array( 'settings', 'logs', 'failed' ), true ) ? $tab : 'settings';
 
 		// Values shared with templates.
-		$has_token   = '' !== (string) get_option( SF_LEAD_FORM_OPT_TOKEN, '' );
-		$portal_id   = (string) get_option( SF_LEAD_FORM_OPT_PORTAL, SF_LEAD_FORM_PORTAL_DEFAULT );
-		$secret      = (string) get_option( SF_LEAD_FORM_OPT_SECRET, '' );
+		$has_token      = '' !== (string) get_option( SF_LEAD_FORM_OPT_TOKEN, '' );
+		$portal_id      = (string) get_option( SF_LEAD_FORM_OPT_PORTAL, SF_LEAD_FORM_PORTAL_DEFAULT );
+		$secret         = (string) get_option( SF_LEAD_FORM_OPT_SECRET, '' );
+		$alert_email    = (string) get_option( SF_LEAD_FORM_OPT_ALERT_EMAIL, '' );
 		$settings_group = self::SETTINGS_GROUP;
 		$menu_slug      = self::MENU_SLUG;
 		$logger         = $this->logger;
+		$lead_store     = $this->lead_store;
 
 		echo '<div class="wrap sf-lf-admin">';
 		echo '<h1>' . esc_html__( 'SF Lead Form', 'sf-lead-form' ) . '</h1>';
 
-		$base = admin_url( 'options-general.php?page=' . self::MENU_SLUG );
+		$this->render_health_banner();
+
+		$failed_count = $this->lead_store->count( true );
+		$base         = admin_url( 'options-general.php?page=' . self::MENU_SLUG );
 		echo '<h2 class="nav-tab-wrapper">';
 		printf(
 			'<a href="%s" class="nav-tab %s">%s</a>',
@@ -215,14 +234,79 @@ class SF_Lead_Form_Admin {
 			'logs' === $tab ? 'nav-tab-active' : '',
 			esc_html__( 'Logs', 'sf-lead-form' )
 		);
+		printf(
+			'<a href="%s" class="nav-tab %s">%s</a>',
+			esc_url( add_query_arg( 'tab', 'failed', $base ) ),
+			'failed' === $tab ? 'nav-tab-active' : '',
+			esc_html__( 'Failed leads', 'sf-lead-form' ) . ( $failed_count > 0 ? ' (' . (int) $failed_count . ')' : '' )
+		);
 		echo '</h2>';
 
 		if ( 'logs' === $tab ) {
 			require SF_LEAD_FORM_PATH . 'admin/logs-page.php';
+		} elseif ( 'failed' === $tab ) {
+			require SF_LEAD_FORM_PATH . 'admin/failed-leads-page.php';
 		} else {
 			require SF_LEAD_FORM_PATH . 'admin/settings-page.php';
 		}
 
 		echo '</div>';
+	}
+
+	/**
+	 * Show the most recent HubSpot health-check result as a coloured banner.
+	 */
+	private function render_health_banner(): void {
+		$health = get_option( SF_LEAD_FORM_OPT_HEALTH, array() );
+		if ( ! is_array( $health ) || ! isset( $health['ok'] ) ) {
+			return;
+		}
+		$ok    = ! empty( $health['ok'] );
+		$when  = isset( $health['time'] ) ? (string) $health['time'] : '';
+		$label = $ok
+			? esc_html__( 'HubSpot connection: OK', 'sf-lead-form' )
+			: esc_html__( 'HubSpot connection: FAILING — new leads are being queued and retried.', 'sf-lead-form' );
+		printf(
+			'<div class="notice %s" style="margin:12px 0;"><p><strong>%s</strong> %s%s</p></div>',
+			$ok ? 'notice-success' : 'notice-error',
+			$label, // Pre-escaped above.
+			esc_html( (string) ( $health['message'] ?? '' ) ),
+			'' !== $when ? ' <em>(' . esc_html( $when ) . ')</em>' : ''
+		);
+	}
+
+	/**
+	 * admin-post handler for the Failed-leads actions: retry one, retry all,
+	 * delete, or export CSV. Nonce- and capability-gated.
+	 */
+	public function handle_lead_action(): void {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'Permission denied.', 'sf-lead-form' ) );
+		}
+		check_admin_referer( self::LEAD_ACTION );
+
+		$do = isset( $_POST['do'] ) ? sanitize_key( wp_unslash( $_POST['do'] ) ) : '';
+		$id = isset( $_POST['id'] ) ? absint( wp_unslash( $_POST['id'] ) ) : 0;
+
+		if ( 'export' === $do ) {
+			$csv = $this->lead_store->to_csv( true );
+			nocache_headers();
+			header( 'Content-Type: text/csv; charset=utf-8' );
+			header( 'Content-Disposition: attachment; filename="sf-lead-form-pending-' . gmdate( 'Ymd-His' ) . '.csv"' );
+			echo $csv; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+			exit;
+		}
+
+		if ( 'retry_all' === $do ) {
+			sf_lead_form_process_pending( 100 );
+		} elseif ( 'retry' === $do && $id > 0 ) {
+			$this->lead_store->requeue( $id );
+			sf_lead_form_process_pending( 100 );
+		} elseif ( 'delete' === $do && $id > 0 ) {
+			$this->lead_store->delete( $id );
+		}
+
+		wp_safe_redirect( admin_url( 'options-general.php?page=' . self::MENU_SLUG . '&tab=failed' ) );
+		exit;
 	}
 }

@@ -8,6 +8,7 @@ contact via the **CRM v3 API with a Private App token**.
 - **No GrowForms. No HubSpot MCP. No OAuth.** One portal, one Private App token, server-side PHP.
 - Zero front-end dependencies (no React/Vue/jQuery), no build step.
 - Token stays server-side, stored **encrypted**; never reaches the browser.
+- **Never loses a lead (v1.1):** every submission is stored locally first and auto-retried if HubSpot is unreachable, with throttled admin alerts and a daily connection health-check. Operations runbook: [`MAINTENANCE.md`](MAINTENANCE.md).
 
 ---
 
