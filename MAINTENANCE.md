@@ -105,7 +105,28 @@ Then bump the version and redeploy (§4).
 
 ---
 
-## 7. Future option (not built yet): partial / abandoned-lead capture — no Zapier
+## 7. Behavioral tracking — Microsoft Clarity gate funnel (v1.1.1)
+
+The form fires a Microsoft Clarity custom **event** as the visitor reaches each gate, plus a custom
+**tag** for each choice. **No PII is ever sent** — contact fields are never tagged.
+
+**Events (in order)** — use these to build a Clarity **Funnel**:
+`sf_form_started` → `sf_g1_enquiry_type` → `sf_g2_product_type` → `sf_g3_unit_quantity` →
+`sf_g4_manufacturing_budget` → `sf_g5_manufacturing_experience` → `sf_g6_journey_stage` →
+`sf_g7_contact` → `sf_form_submit_attempt` → `sf_form_submitted`
+(`sf_form_error` fires if a submission errors.)
+
+**Tags** (filter recordings by these): `sf_step_reached` (every gate a session reached),
+`sf_enquiry_type`, `sf_product_type`, `sf_unit_quantity`, `sf_manufacturing_budget`,
+`sf_manufacturing_experience`, `sf_journey_stage`.
+
+**Set up the funnel:** Clarity dashboard → **Funnels → New funnel** → add the events above in order →
+Save. Drop-off between consecutive steps = where visitors abandon. To watch the people who bailed at,
+say, budget: **Recordings** → filter where tag `sf_step_reached` contains `4_manufacturing_budget`.
+The same events also fire to **GA4 / GTM** when present (via `gtag` / `dataLayer`), so drop-off ties
+back to AdWords campaign & keyword.
+
+## 8. Future option (not built yet): partial / abandoned-lead capture — no Zapier
 Capture drop-offs by saving name/phone on field `blur` to a new plugin endpoint
 (`POST /wp-json/sf-lead-form/v1/partial`) — entirely first-party, no Zapier. To be useful it needs the
 contact step moved to the **front** of the form (otherwise earlier steps are anonymous) plus a

@@ -195,6 +195,52 @@
 	}
 
 	/* ------------------------------------------------------------------ *
+	 * Analytics — gate-level tracking (Microsoft Clarity + optional GA4).
+	 * Fire-and-forget: a tracking error must never break the form. No PII is
+	 * ever sent (contact fields are not tagged).
+	 * ------------------------------------------------------------------ */
+	var tracked = {};
+
+	function track(eventName, tags) {
+		try {
+			if (typeof window.clarity === 'function') {
+				window.clarity('event', eventName);
+				if (tags) {
+					Object.keys(tags).forEach(function (k) {
+						window.clarity('set', k, String(tags[k]));
+					});
+				}
+			}
+			if (typeof window.gtag === 'function') {
+				window.gtag('event', eventName, tags || {});
+			} else if (window.dataLayer && typeof window.dataLayer.push === 'function') {
+				var payload = { event: eventName };
+				if (tags) {
+					Object.keys(tags).forEach(function (k) { payload[k] = tags[k]; });
+				}
+				window.dataLayer.push(payload);
+			}
+		} catch (e) { /* analytics must never break the form */ }
+	}
+
+	function tag(key, value) {
+		try {
+			if (typeof window.clarity === 'function') {
+				window.clarity('set', key, String(value));
+			}
+		} catch (e) { /* no-op */ }
+	}
+
+	function trackStepReached(step, index) {
+		var name = 'sf_g' + index + '_' + step.id;
+		if (tracked[name]) {
+			return;
+		}
+		tracked[name] = true;
+		track(name, { sf_step_reached: index + '_' + step.id });
+	}
+
+	/* ------------------------------------------------------------------ *
 	 * Rendering
 	 * ------------------------------------------------------------------ */
 	function render() {
@@ -203,6 +249,12 @@
 		}
 		root.innerHTML = '';
 		var step = STEPS[state.currentStep - 1];
+
+		if (!tracked.__started) {
+			tracked.__started = true;
+			track('sf_form_started');
+		}
+		trackStepReached(step, state.currentStep);
 
 		var card = el('div', { class: 'sf-lf__card' });
 		card.appendChild(el('h2', { class: 'sf-lf__title', text: step.title }));
@@ -367,6 +419,7 @@
 	 * ------------------------------------------------------------------ */
 	function selectOption(step, value, btnEl) {
 		state.data[step.key] = value;
+		tag('sf_' + step.key, value);
 
 		var group = btnEl.parentNode;
 		Array.prototype.forEach.call(group.children, function (child) {
@@ -501,6 +554,7 @@
 		}
 		state.submitting = true;
 		renderSubmitting();
+		track('sf_form_submit_attempt');
 
 		var payload = buildPayload();
 
@@ -531,6 +585,7 @@
 	}
 
 	function renderError(message) {
+		track('sf_form_error');
 		root.innerHTML = '';
 		var card = el('div', { class: 'sf-lf__card' }, [
 			el('div', { class: 'sf-lf__error', text: message }),
@@ -541,6 +596,7 @@
 	}
 
 	function showThankYou() {
+		track('sf_form_submitted');
 		var d = state.data;
 		root.innerHTML = '';
 
