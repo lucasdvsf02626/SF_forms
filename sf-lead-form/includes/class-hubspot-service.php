@@ -149,17 +149,7 @@ class SF_Lead_Form_HubSpot_Service {
 		$email   = (string) ( $properties['email'] ?? '' );
 		$dropped = array();
 
-		$res = $this->request( 'POST', '/crm/v3/objects/contacts', array( 'properties' => $properties ) );
-
-		// On unknown-property 400, strip the offending props and retry once.
-		if ( 400 === $res['status'] ) {
-			$bad = $this->extract_invalid_properties( $res['raw'] );
-			if ( ! empty( $bad ) ) {
-				$properties = array_diff_key( $properties, array_flip( $bad ) );
-				$dropped    = $bad;
-				$res        = $this->request( 'POST', '/crm/v3/objects/contacts', array( 'properties' => $properties ) );
-			}
-		}
+		$res = $this->send_with_recovery( 'POST', '/crm/v3/objects/contacts', $properties, $dropped );
 
 		if ( $res['status'] >= 200 && $res['status'] < 300 ) {
 			return array(
@@ -203,16 +193,7 @@ class SF_Lead_Form_HubSpot_Service {
 	 */
 	private function update_contact( string $id, array $properties, array $dropped = array() ): array {
 		$endpoint = '/crm/v3/objects/contacts/' . rawurlencode( $id );
-		$res      = $this->request( 'PATCH', $endpoint, array( 'properties' => $properties ) );
-
-		if ( 400 === $res['status'] ) {
-			$bad = $this->extract_invalid_properties( $res['raw'] );
-			if ( ! empty( $bad ) ) {
-				$properties = array_diff_key( $properties, array_flip( $bad ) );
-				$dropped    = array_values( array_unique( array_merge( $dropped, $bad ) ) );
-				$res        = $this->request( 'PATCH', $endpoint, array( 'properties' => $properties ) );
-			}
-		}
+		$res      = $this->send_with_recovery( 'PATCH', $endpoint, $properties, $dropped );
 
 		if ( $res['status'] >= 200 && $res['status'] < 300 ) {
 			return array(
@@ -223,6 +204,46 @@ class SF_Lead_Form_HubSpot_Service {
 			);
 		}
 		return $this->error_for_status( $res );
+	}
+
+	/**
+	 * Send a create/update request and, if HubSpot rejects it with a 400 for
+	 * unknown / non-existent / invalid-option properties, strip those properties
+	 * and retry — looping until it succeeds or there is nothing left to strip.
+	 *
+	 * This guarantees that a single bad property can never discard the rest of the
+	 * contact's data (the failure mode where one missing property — e.g. a CRM
+	 * field that doesn't exist — caused the whole PATCH, and every other field in
+	 * it, to be rejected).
+	 *
+	 * @param string                $method      HTTP verb.
+	 * @param string                $endpoint    Path.
+	 * @param array<string,string> &$properties  Properties; reduced in place as bad ones are stripped.
+	 * @param array<int,string>    &$dropped     Accumulates the names of stripped properties.
+	 * @return array{status:int,body:?array,raw:string,error:string}
+	 */
+	private function send_with_recovery( string $method, string $endpoint, array &$properties, array &$dropped ): array {
+		$res    = $this->request( $method, $endpoint, array( 'properties' => $properties ) );
+		$rounds = 0;
+
+		while ( 400 === $res['status'] && $rounds < 6 ) {
+			$bad = $this->extract_invalid_properties( $res['raw'] );
+			// Only strip properties we actually sent, so a parser over-match can
+			// neither loop forever nor remove something valid.
+			$bad = array_values( array_intersect( $bad, array_keys( $properties ) ) );
+			if ( empty( $bad ) ) {
+				break;
+			}
+			$properties = array_diff_key( $properties, array_flip( $bad ) );
+			$dropped    = array_values( array_unique( array_merge( $dropped, $bad ) ) );
+			if ( empty( $properties ) ) {
+				break;
+			}
+			$res = $this->request( $method, $endpoint, array( 'properties' => $properties ) );
+			++$rounds;
+		}
+
+		return $res;
 	}
 
 	/**
@@ -295,22 +316,29 @@ class SF_Lead_Form_HubSpot_Service {
 		$names = array();
 
 		// HubSpot often nests the detail as escaped JSON inside "message"; flatten
-		// \" -> " so a single set of simple patterns covers both shapes.
+		// \" -> " so a single set of simple patterns covers every shape.
 		$s = str_replace( '\\"', '"', $raw );
 
+		// "Property "X" does not exist".
 		if ( preg_match_all( '/Property\s+"([^"]+)"\s+does not exist/i', $s, $m ) ) {
 			$names = array_merge( $names, $m[1] );
 		}
-		if ( false !== stripos( $s, 'PROPERTY_DOESNT_EXIST' ) && preg_match_all( '/"name"\s*:\s*"([^"]+)"/', $s, $m2 ) ) {
-			$names = array_merge( $names, $m2[1] );
-		}
 
-		// Enumeration mismatch: a value sent for a dropdown/checkbox property is
-		// not one of its allowed options. Strip that property so the lead still
-		// saves (mirrors the missing-property recovery above).
-		if ( ( false !== stripos( $s, 'INVALID_OPTION' ) || false !== stripos( $s, 'was not one of the allowed options' ) )
-			&& preg_match_all( '/"name"\s*:\s*"([^"]+)"/', $s, $m3 ) ) {
-			$names = array_merge( $names, $m3[1] );
+		// Structured validation errors reference the offending property by "name"
+		// or "in" — covers both a missing property and an enumeration/option
+		// mismatch (a value not allowed for a dropdown/checkbox property). The
+		// caller intersects the result with the properties it actually sent, so an
+		// over-broad match here can never strip something valid.
+		if ( false !== stripos( $s, 'does not exist' )
+			|| false !== stripos( $s, 'PROPERTY_DOESNT_EXIST' )
+			|| false !== stripos( $s, 'INVALID_OPTION' )
+			|| false !== stripos( $s, 'was not one of the allowed options' ) ) {
+			if ( preg_match_all( '/"name"\s*:\s*"([^"]+)"/', $s, $m2 ) ) {
+				$names = array_merge( $names, $m2[1] );
+			}
+			if ( preg_match_all( '/"in"\s*:\s*"([^"]+)"/', $s, $m3 ) ) {
+				$names = array_merge( $names, $m3[1] );
+			}
 		}
 
 		return array_values( array_unique( $names ) );

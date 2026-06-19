@@ -3,7 +3,7 @@
  * Plugin Name:       SF Lead Form
  * Plugin URI:        https://github.com/lucasdvsf02626/SF_forms
  * Description:        Self-owned multi-step lead capture form (GrowForms replacement) that sends submissions straight to HubSpot CRM as contacts. Vanilla JS + PHP, zero dependencies. Embed with [sf_lead_form].
- * Version:           1.1.1
+ * Version:           1.2.5
  * Requires at least: 6.0
  * Requires PHP:      8.0
  * Author:            Supplement Factory
@@ -20,7 +20,7 @@ defined( 'ABSPATH' ) || exit;
 /* -------------------------------------------------------------------------
  * Constants
  * ---------------------------------------------------------------------- */
-define( 'SF_LEAD_FORM_VERSION', '1.1.1' );
+define( 'SF_LEAD_FORM_VERSION', '1.2.5' );
 define( 'SF_LEAD_FORM_FILE', __FILE__ );
 define( 'SF_LEAD_FORM_PATH', plugin_dir_path( __FILE__ ) );
 define( 'SF_LEAD_FORM_URL', plugin_dir_url( __FILE__ ) );
@@ -266,10 +266,13 @@ function sf_lead_form_render_shortcode( $atts = array() ) {
 	$atts = shortcode_atts(
 		array(
 			'title' => '',
+			'mode'  => 'standard',
 		),
 		$atts,
 		'sf_lead_form'
 	);
+
+	$mode = ( 'progressive' === $atts['mode'] ) ? 'progressive' : 'standard';
 
 	wp_enqueue_style( 'sf-lead-form' );
 	wp_enqueue_script( 'sf-lead-form' );
@@ -278,8 +281,11 @@ function sf_lead_form_render_shortcode( $atts = array() ) {
 		'sf-lead-form',
 		'sfLeadForm',
 		array(
-			'restUrl' => esc_url_raw( rest_url( SF_LEAD_FORM_REST_NS . '/submit' ) ),
-			'nonce'   => wp_create_nonce( 'wp_rest' ),
+			'restUrl'     => esc_url_raw( rest_url( SF_LEAD_FORM_REST_NS . '/submit' ) ),
+			'partialUrl'  => esc_url_raw( rest_url( SF_LEAD_FORM_REST_NS . '/partial' ) ),
+			'nonce'       => wp_create_nonce( 'wp_rest' ),
+			'mode'        => $mode,
+			'consentText' => sf_lead_form_consent_text(),
 		)
 	);
 
@@ -305,3 +311,36 @@ function sf_lead_form_render_shortcode( $atts = array() ) {
 	<?php
 	return (string) ob_get_clean();
 }
+
+/**
+ * Consent wording shown on the progressive (email-first) form, before any
+ * personal data is stored. This is placeholder wording pending sign-off — review
+ * with whoever owns data/legal, or override it without a code change via the
+ * `sf_lead_form_consent_text` filter (e.g. in the theme's functions.php).
+ *
+ * @return string
+ */
+function sf_lead_form_consent_text() {
+	$default = __( 'I agree to Supplement Factory storing these details and contacting me about my enquiry, in line with the Privacy Policy.', 'sf-lead-form' );
+	return (string) apply_filters( 'sf_lead_form_consent_text', $default );
+}
+
+/**
+ * Render the [sf_lead_form] shortcode when it is placed inside an ACF field — e.g.
+ * the theme's hero "Form" field, which the Banner template echoes WITHOUT running
+ * do_shortcode() (so a raw shortcode string would otherwise print literally).
+ *
+ * We only touch ACF values that actually contain our shortcode, so there is zero
+ * effect on any other field. This lets the form be dropped into any ACF field, not
+ * just normal post content. No-op when ACF is not installed (the hook never fires).
+ *
+ * @param mixed $value The ACF field value.
+ * @return mixed
+ */
+function sf_lead_form_acf_do_shortcode( $value ) {
+	if ( is_string( $value ) && false !== strpos( $value, '[sf_lead_form' ) ) {
+		return do_shortcode( $value );
+	}
+	return $value;
+}
+add_filter( 'acf/format_value', 'sf_lead_form_acf_do_shortcode', 20 );

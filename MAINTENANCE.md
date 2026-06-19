@@ -126,8 +126,32 @@ say, budget: **Recordings** → filter where tag `sf_step_reached` contains `4_m
 The same events also fire to **GA4 / GTM** when present (via `gtag` / `dataLayer`), so drop-off ties
 back to AdWords campaign & keyword.
 
-## 8. Future option (not built yet): partial / abandoned-lead capture — no Zapier
-Capture drop-offs by saving name/phone on field `blur` to a new plugin endpoint
-(`POST /wp-json/sf-lead-form/v1/partial`) — entirely first-party, no Zapier. To be useful it needs the
-contact step moved to the **front** of the form (otherwise earlier steps are anonymous) plus a
-**consent/privacy notice** (UK GDPR/PECR). Ask Claude to enable it when wanted.
+## 8. Progressive (email-first) capture — built in v1.2.0
+An opt-in second variant that **captures abandoners**: it asks for **name + email first** (with a
+consent tick), then saves each gate to HubSpot as the visitor advances — so someone who quits at the
+budget step is already a contact in your CRM. All first-party, **no Zapier**.
+
+**Switch it on per page (the standard form is untouched):**
+- Standard (contact last):   `[sf_lead_form]`
+- Progressive (email first): `[sf_lead_form mode="progressive"]`
+
+Put the progressive shortcode on a test/landing page (or split paid traffic) and **A/B it** against the
+standard form — compare completion in the Clarity funnel + lead volume in HubSpot before rolling wider.
+
+**How it works:**
+- New REST route `POST /wp-json/sf-lead-form/v1/partial` (`class-rest-handler.php`): nonce-protected,
+  looser rate limit (~60 / 10 min / IP, since it fires once per gate). Requires a valid **email +
+  consent**, then upserts the HubSpot contact (dedupe on email) with whatever's known so far + a
+  `form_progress` value (e.g. `4_manufacturing_budget`). If HubSpot is down, the partial is queued in
+  the lead store and retried — never-lose-a-lead covers partials too.
+- The final submit still goes through `/submit` and completes the record.
+
+**Consent (UK GDPR/PECR):** the tick-box wording is a **placeholder pending sign-off**. Change it with
+no code via the `sf_lead_form_consent_text` filter (theme `functions.php`):
+`add_filter( 'sf_lead_form_consent_text', function () { return 'Your approved wording…'; } );`
+Get final wording approved by whoever owns data/legal. The tick is enforced before any PII is stored.
+
+**HubSpot setup (optional but recommended):** create a single-line-text property **`form_progress`** to
+record how far each lead reached. If you skip it, leads still save (the plugin strips the unknown
+property, retries, and logs it). Partial leads carry `lead_source = "Website Form (partial)"`, so you can
+route/segment them in HubSpot.

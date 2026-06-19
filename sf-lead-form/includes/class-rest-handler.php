@@ -68,6 +68,16 @@ class SF_Lead_Form_REST_Handler {
 
 		register_rest_route(
 			SF_LEAD_FORM_REST_NS,
+			'/partial',
+			array(
+				'methods'             => 'POST',
+				'callback'            => array( $this, 'handle_partial' ),
+				'permission_callback' => array( $this, 'check_permission' ),
+			)
+		);
+
+		register_rest_route(
+			SF_LEAD_FORM_REST_NS,
 			'/health',
 			array(
 				'methods'             => 'GET',
@@ -221,9 +231,131 @@ class SF_Lead_Form_REST_Handler {
 		);
 	}
 
+	/**
+	 * Progressive ("email-first") capture. Receives the data known so far —
+	 * requires a valid email AND explicit consent — and upserts the HubSpot
+	 * contact, so an abandoned form is still captured. Fired once per gate as the
+	 * visitor advances, so it is deliberately lightweight and idempotent (HubSpot
+	 * dedupes on email). Always returns HTTP 200 for processed calls; a HubSpot
+	 * failure is queued in the lead store for the retry cron.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @return WP_REST_Response
+	 */
+	public function handle_partial( WP_REST_Request $request ): WP_REST_Response {
+		if ( $this->is_partial_rate_limited() ) {
+			return new WP_REST_Response( array( 'success' => false, 'code' => 'rate_limited' ), 429 );
+		}
+
+		$params = $request->get_json_params();
+		if ( ! is_array( $params ) ) {
+			$params = $request->get_params();
+		}
+
+		// Honeypot: pretend success, store nothing.
+		if ( '' !== trim( (string) ( $params['company_website'] ?? '' ) ) ) {
+			return new WP_REST_Response( array( 'success' => true ), 200 );
+		}
+
+		// A valid email is required to upsert a partial (HubSpot dedupes on it).
+		$email = sanitize_email( strtolower( trim( (string) ( $params['email'] ?? '' ) ) ) );
+		if ( '' === $email || ! is_email( $email ) ) {
+			return new WP_REST_Response( array( 'success' => false, 'code' => 'no_email' ), 200 );
+		}
+
+		// Never store personal data without explicit consent.
+		if ( 'yes' !== (string) ( $params['consent'] ?? '' ) ) {
+			return new WP_REST_Response( array( 'success' => false, 'code' => 'no_consent' ), 200 );
+		}
+
+		$properties = $this->map_to_hubspot_partial( $params, $email );
+		$hs         = $this->hubspot->create_or_update_contact( $properties );
+
+		$this->logger->log(
+			array(
+				'email'  => $email,
+				'status' => ! empty( $hs['success'] ) ? 'success' : 'error',
+				'action' => 'partial',
+				'vid'    => (string) ( $hs['vid'] ?? '' ),
+				'error'  => isset( $hs['error'] ) ? (string) $hs['error'] : null,
+			)
+		);
+
+		// If HubSpot is unreachable, queue the partial so it isn't lost (retry cron syncs it).
+		// No admin alert here — partials fire often; the retry + daily health-check cover failures.
+		if ( empty( $hs['success'] ) ) {
+			$lead_id = $this->lead_store->insert( $properties );
+			if ( $lead_id ) {
+				$this->lead_store->record_failure( $lead_id, (string) ( $hs['error'] ?? 'partial sync failed' ) );
+			}
+		}
+
+		return new WP_REST_Response( array( 'success' => true, 'action' => 'partial' ), 200 );
+	}
+
 	/* ------------------------------------------------------------------ *
 	 * Helpers
 	 * ------------------------------------------------------------------ */
+
+	/**
+	 * Map a partial submission to HubSpot properties. Includes only fields that
+	 * are actually present (so a later gate never blanks an earlier value), tags
+	 * the contact as an in-progress lead, and records how far they reached.
+	 *
+	 * @param array<string,mixed> $p     Raw params.
+	 * @param string              $email Sanitised email.
+	 * @return array<string,string>
+	 */
+	private function map_to_hubspot_partial( array $p, string $email ): array {
+		$props = array( 'email' => $email );
+
+		$text = array(
+			'firstname' => 'firstname',
+			'lastname'  => 'lastname',
+			'phone'     => 'phone',
+			'company'   => 'company_name',
+		);
+		foreach ( $text as $hs_key => $src ) {
+			$val = sanitize_text_field( (string) ( $p[ $src ] ?? '' ) );
+			if ( '' !== $val ) {
+				$props[ $hs_key ] = $val;
+			}
+		}
+
+		$brief = sanitize_textarea_field( (string) ( $p['product_brief'] ?? '' ) );
+		if ( '' !== $brief ) {
+			$props['message'] = mb_substr( $brief, 0, 5000 );
+		}
+
+		foreach ( array( 'enquiry_type', 'product_type', 'unit_quantity', 'manufacturing_budget', 'manufacturing_experience', 'journey_stage' ) as $key ) {
+			$val = sanitize_text_field( (string) ( $p[ $key ] ?? '' ) );
+			if ( '' !== $val ) {
+				$props[ $key ] = $val;
+			}
+		}
+
+		$props['lifecyclestage'] = 'lead';
+		$props['hs_lead_status'] = 'NEW';
+
+		return $props;
+	}
+
+	/**
+	 * Looser per-IP rate limit for the partial endpoint, which legitimately fires
+	 * several times per visitor (once per gate). Still caps abuse.
+	 *
+	 * @return bool
+	 */
+	private function is_partial_rate_limited(): bool {
+		$ip    = $this->client_ip();
+		$key   = 'sf_lf_rlp_' . md5( $ip );
+		$count = (int) get_transient( $key );
+		if ( $count >= 60 ) {
+			return true;
+		}
+		set_transient( $key, $count + 1, self::RATE_WINDOW );
+		return false;
+	}
 
 	/**
 	 * Map validated form data to HubSpot contact properties.
@@ -249,7 +381,6 @@ class SF_Lead_Form_REST_Handler {
 			// Lead context.
 			'lifecyclestage'           => 'lead',
 			'hs_lead_status'           => 'NEW',
-			'lead_source'              => 'Website Form',
 		);
 
 		if ( '' !== $d['product_brief'] ) {

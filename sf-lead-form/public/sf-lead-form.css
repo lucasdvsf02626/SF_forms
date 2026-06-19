@@ -1,7 +1,8 @@
 /**
  * SF Lead Form — front-end styles.
  *
- * Brand: Supplement Factory red (#E31837) on a white card over a dark page.
+ * Brand: Supplement Factory red (#E31837) on a white card. The outer wrapper is
+ * transparent so the form blends into whatever container it is embedded in.
  * All values are CSS custom properties so the look is easy to retheme.
  *
  * NOTE on option cards: by default cards are WHITE (unselected) / RED (selected)
@@ -17,7 +18,7 @@
 	--sf-muted: #6b7280;
 	--sf-border: #e0e0e0;
 	--sf-track: #f7d9de;
-	--sf-bg: #1a1a2e;
+	--sf-bg: transparent;
 	--sf-card-max: 460px;
 	--sf-radius: 12px;
 	--sf-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -26,7 +27,7 @@
 	display: flex;
 	justify-content: center;
 	background: var(--sf-bg);
-	padding: 40px 16px;
+	padding: 0;
 	font-family: var(--sf-font);
 	-webkit-font-smoothing: antialiased;
 }
@@ -219,6 +220,9 @@
 }
 
 .sf-lf__phone-code {
+	flex: 0 0 auto;
+	width: 122px;
+	max-width: 44%;
 	border: 0;
 	border-right: 1px solid var(--sf-border);
 	background: #fafafa;
@@ -227,6 +231,7 @@
 	font-size: 1rem;
 	color: var(--sf-ink);
 	cursor: pointer;
+	text-overflow: ellipsis;
 }
 
 .sf-lf__phone-number {
@@ -418,4 +423,24 @@
 		flex-direction: column;
 		gap: 0;
 	}
+}
+
+/* ---------------------------------------------- Consent (progressive mode) */
+.sf-lf__consent {
+	display: flex;
+	align-items: flex-start;
+	gap: 10px;
+	margin: 6px 2px 2px;
+	cursor: pointer;
+	font-size: 0.85rem;
+	line-height: 1.45;
+	color: var(--sf-muted);
+}
+
+.sf-lf__consent-check {
+	margin-top: 2px;
+	width: 18px;
+	height: 18px;
+	flex: 0 0 auto;
+	cursor: pointer;
 }
