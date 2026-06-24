@@ -155,3 +155,26 @@ Get final wording approved by whoever owns data/legal. The tick is enforced befo
 record how far each lead reached. If you skip it, leads still save (the plugin strips the unknown
 property, retries, and logs it). Partial leads carry `lead_source = "Website Form (partial)"`, so you can
 route/segment them in HubSpot.
+
+## 9. Triggering HubSpot automations (deals / outreach) — v1.2.6
+Leads created via the CRM API don't raise a HubSpot **form-submission event**, so workflows enrolled on
+*"submitted form X"* (deal creation, automated emails) won't fire. v1.2.6 fixes this: a **completed**
+enquiry is also mirrored to a HubSpot **form** (Forms API), which triggers those workflows. It's a
+*supplement* to the existing CRM contact write — the contact and all its fields are created exactly as
+before; this just adds the automation trigger + a submission on the contact's timeline.
+
+**Switch it on (one-off):**
+1. HubSpot → **Marketing → Forms** → create a form (e.g. "SF Enquiry Form") whose fields match the
+   contact properties the plugin sends (`email`, `firstname`, `lastname`, `phone`, `company`, `message`,
+   `enquiry_type`, `product_type`, `unit_quantity`, `manufacturing_budget`, `manufacturing_experience`,
+   `journey_stage`). **Publish** it — it does **not** need to be embedded anywhere (submissions arrive via API).
+2. Copy the form's **GUID** (it's in the form-editor URL) → WP → **Settings → SF Lead Form → HubSpot Form
+   GUID** → paste → **Save Settings**. (Leave blank to turn the feature off.)
+3. Point your deal-creation + email-outreach **workflows** to enrol on *"Contact has submitted form:
+   SF Enquiry Form."*
+4. **Test:** submit the live form once → the **Logs** tab shows a `form_submit` / `success` row, and the
+   contact in HubSpot shows a form submission on its timeline with the workflow enrolled (deal created /
+   email queued).
+
+> ⚠️ Automated **marketing** emails only send to **marketing contacts with valid consent** — confirm this
+> in HubSpot, or the workflow enrols the contact but no email actually goes out.

@@ -16,8 +16,9 @@ defined( 'ABSPATH' ) || exit;
  */
 class SF_Lead_Form_HubSpot_Service {
 
-	private const BASE_URL = 'https://api.hubapi.com';
-	private const TIMEOUT  = 15;
+	private const BASE_URL  = 'https://api.hubapi.com';
+	private const FORMS_URL = 'https://api.hsforms.com';
+	private const TIMEOUT   = 15;
 
 	/* ------------------------------------------------------------------ *
 	 * Token storage (encrypted at rest)
@@ -177,6 +178,79 @@ class SF_Lead_Form_HubSpot_Service {
 		}
 
 		return $this->error_for_status( $res );
+	}
+
+	/**
+	 * Mirror a completed submission to a HubSpot **form** via the Forms Submissions
+	 * API, so it registers as a real form-submission event and triggers any workflow
+	 * enrolled on that form (deal creation, automated outreach, etc.).
+	 *
+	 * This is intentionally separate from create_or_update_contact(): that call sets
+	 * the contact's CRM properties; THIS call fires the automations. The endpoint is
+	 * public (keyed by portal + form GUID) on a different host, so it needs no
+	 * Authorization header and works even if the private-app token is in doubt.
+	 *
+	 * @param string                          $portal_id Portal (hub) id.
+	 * @param string                          $form_guid Target HubSpot form GUID.
+	 * @param array<int,array<string,string>> $fields    List of { objectTypeId?, name, value }.
+	 * @param array<string,string>            $context   Optional { hutk, pageUri, pageName }.
+	 * @return array{success:bool,status:int,error:string}
+	 */
+	public function submit_form( string $portal_id, string $form_guid, array $fields, array $context = array() ): array {
+		if ( '' === $portal_id || '' === $form_guid || empty( $fields ) ) {
+			return array(
+				'success' => false,
+				'status'  => 0,
+				'error'   => __( 'Form GUID, portal id, or fields not provided.', 'sf-lead-form' ),
+			);
+		}
+
+		$payload = array( 'fields' => array_values( $fields ) );
+		if ( ! empty( $context ) ) {
+			$payload['context'] = $context;
+		}
+
+		$url      = self::FORMS_URL . '/submissions/v3/integration/submit/' . rawurlencode( $portal_id ) . '/' . rawurlencode( $form_guid );
+		$response = wp_remote_post(
+			$url,
+			array(
+				'timeout' => self::TIMEOUT,
+				'headers' => array(
+					'Content-Type' => 'application/json',
+					'Accept'       => 'application/json',
+					'User-Agent'   => 'SF-Lead-Form-WP/' . SF_LEAD_FORM_VERSION,
+				),
+				'body'    => wp_json_encode( $payload ),
+			)
+		);
+
+		if ( is_wp_error( $response ) ) {
+			return array(
+				'success' => false,
+				'status'  => 0,
+				'error'   => $response->get_error_message(),
+			);
+		}
+
+		$status = (int) wp_remote_retrieve_response_code( $response );
+		if ( $status >= 200 && $status < 300 ) {
+			return array(
+				'success' => true,
+				'status'  => $status,
+				'error'   => '',
+			);
+		}
+
+		$raw     = (string) wp_remote_retrieve_body( $response );
+		$parsed  = json_decode( $raw, true );
+		$message = is_array( $parsed ) && isset( $parsed['message'] ) ? (string) $parsed['message'] : '';
+
+		return array(
+			'success' => false,
+			'status'  => $status,
+			/* translators: 1: HTTP status, 2: HubSpot message */
+			'error'   => trim( sprintf( __( 'Form submit failed (HTTP %1$d). %2$s', 'sf-lead-form' ), $status, $message ) ),
+		);
 	}
 
 	/* ------------------------------------------------------------------ *

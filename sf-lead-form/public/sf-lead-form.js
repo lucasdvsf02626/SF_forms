@@ -853,6 +853,11 @@
 	/* ------------------------------------------------------------------ *
 	 * Submission
 	 * ------------------------------------------------------------------ */
+	function readCookie(name) {
+		var parts = ('; ' + document.cookie).split('; ' + name + '=');
+		return 2 === parts.length ? (parts.pop().split(';').shift() || '') : '';
+	}
+
 	function buildPayload() {
 		var d = state.data;
 		d.phone = fullPhone();
@@ -872,7 +877,12 @@
 			manufacturing_budget: d.manufacturing_budget,
 			journey_stage: d.journey_stage,
 			consent: d._consent ? 'yes' : '',
-			company_website: hp ? hp.value : ''
+			company_website: hp ? hp.value : '',
+			// HubSpot form-submission context (optional). Used server-side to mirror
+			// the lead to a HubSpot form so it triggers CRM workflows/automations.
+			hutk: readCookie('hubspotutk'),
+			page_uri: window.location.href,
+			page_name: document.title
 		};
 	}
 

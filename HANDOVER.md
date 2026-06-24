@@ -1,8 +1,7 @@
 # SF Lead Form — Project Handover & Long-Term Maintenance
 
-**Plugin:** SF Lead Form (`sf-lead-form`)  ·  **Current version:** 1.2.4
+**Plugin:** SF Lead Form (`sf-lead-form`)  ·  **Current version:** 1.2.6
 **Repo:** `lucasdvsf02626/SF_forms` (source of truth)  ·  **Site:** supplementfactoryuk.com
-**Current version:** 1.2.5
 **Purpose:** A self-owned, multi-step lead-capture form that replaces the third-party
 GrowForms embed and pushes every enquiry straight into **HubSpot CRM** — server-side,
 with no third party in the middle.
@@ -144,6 +143,20 @@ they exist, to avoid wasted calls.
 `network` (couldn't reach HubSpot), `unauthorized` (401 — bad token), `rate_limited`
 (429), or `hubspot_error` (other). Anything that isn't a clean success is queued + retried.
 
+### Triggering CRM automations (form-submission mirror) — v1.2.6
+The CRM API creates/updates the **contact** but does **not** raise a HubSpot **form-submission
+event** — so workflows enrolled on *"submitted form X"* (deal creation, automated outreach) never
+fire from an API contact. To fix this, a **completed** enquiry is also mirrored to a HubSpot **form**
+via the Forms API: `POST https://api.hsforms.com/submissions/v3/integration/submit/{portalId}/{formGuid}`
+(see `SF_Lead_Form_HubSpot_Service::submit_form()`). That logs a real submission on the contact
+timeline and triggers any workflow enrolled on that form. **No token needed** (the endpoint is keyed
+by portal + form GUID). It runs **only** when a **Form GUID** is set on the Settings tab (blank = off),
+fires on `/submit` only (not per-gate `/partial`), and is best-effort + logged (`action = form_submit`)
+so a failure never costs the lead. To switch on: create a HubSpot form whose fields match the contact
+properties above, publish it, paste its GUID into Settings, and enrol the deal/email workflows on
+*"submitted form: <that form>"*. (Automated **marketing** emails still require the contact to be a
+marketing contact with valid consent.)
+
 ---
 
 ## 4. Configuration
@@ -152,6 +165,7 @@ they exist, to avoid wasted calls.
 **WP Admin → Settings → SF Lead Form** (direct: `/wp-admin/admin.php?page=sf-lead-form`).
 Three tabs:
 - **Settings** — HubSpot **Access Token**, **Portal ID** (pre-filled `14516909`),
+  **HubSpot Form GUID** (enables the automation-triggering form-submission mirror; blank = off),
   Webhook/Test Secret, **Alert email**, and a **Test Connection** button + a coloured
   **health banner** (green OK / red FAILING).
 - **Logs** — recent masked activity (success/error per action).
@@ -175,8 +189,8 @@ add_filter( 'sf_lead_form_consent_text', function () {
 > (data/legal) before driving real UK traffic to the progressive form.
 
 ### Options stored in `wp_options`
-`sf_lead_form_hubspot_token` (encrypted), `..._portal_id`, `..._secret`, `..._alert_email`,
-`..._health` (last health-check result), `..._db_version` (migration marker).
+`sf_lead_form_hubspot_token` (encrypted), `..._portal_id`, `..._form_guid`, `..._secret`,
+`..._alert_email`, `..._health` (last health-check result), `..._db_version` (migration marker).
 
 ---
 
@@ -268,6 +282,7 @@ HubSpot Private App tokens can be rotated. When that happens:
 | 1.2.3 | Render shortcode inside ACF fields (theme hero "Form" field) |
 | 1.2.4 | Transparent form wrapper (blends into host container) |
 | 1.2.5 | Removed non-existent `lead_source`/`form_progress` from the mapping; hardened the HubSpot strip-and-retry into a loop so one bad property can't discard the rest |
+| 1.2.6 | Completed enquiries can mirror to a HubSpot **form** (Forms API) to trigger CRM workflows/automations (deals, automated outreach). New optional **Form GUID** setting; blank = off |
 
 ---
 

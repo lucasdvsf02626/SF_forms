@@ -113,6 +113,15 @@ class SF_Lead_Form_Admin {
 				'default'           => '',
 			)
 		);
+		register_setting(
+			self::SETTINGS_GROUP,
+			SF_LEAD_FORM_OPT_FORM_GUID,
+			array(
+				'type'              => 'string',
+				'sanitize_callback' => array( $this, 'sanitize_form_guid' ),
+				'default'           => '',
+			)
+		);
 	}
 
 	/**
@@ -138,6 +147,18 @@ class SF_Lead_Form_Admin {
 	 */
 	public function sanitize_portal( $value ): string {
 		return preg_replace( '/\D/', '', (string) $value );
+	}
+
+	/**
+	 * Form GUID sanitiser: lowercase and keep only the characters a HubSpot form
+	 * GUID is made of (hex digits + dashes, e.g. 1a2b3c4d-....). Blank disables it.
+	 *
+	 * @param mixed $value Submitted value.
+	 * @return string
+	 */
+	public function sanitize_form_guid( $value ): string {
+		$value = strtolower( trim( (string) $value ) );
+		return (string) preg_replace( '/[^a-f0-9-]/', '', $value );
 	}
 
 	/**
@@ -209,6 +230,7 @@ class SF_Lead_Form_Admin {
 		$portal_id      = (string) get_option( SF_LEAD_FORM_OPT_PORTAL, SF_LEAD_FORM_PORTAL_DEFAULT );
 		$secret         = (string) get_option( SF_LEAD_FORM_OPT_SECRET, '' );
 		$alert_email    = (string) get_option( SF_LEAD_FORM_OPT_ALERT_EMAIL, '' );
+		$form_guid      = (string) get_option( SF_LEAD_FORM_OPT_FORM_GUID, '' );
 		$settings_group = self::SETTINGS_GROUP;
 		$menu_slug      = self::MENU_SLUG;
 		$logger         = $this->logger;

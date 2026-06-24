@@ -4,7 +4,7 @@ Tags: hubspot, crm, lead form, multi-step, contact form
 Requires at least: 6.0
 Tested up to: 6.5
 Requires PHP: 8.0
-Stable tag: 1.0.0
+Stable tag: 1.2.6
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -45,6 +45,9 @@ Create these as Single-line text contact properties (Settings → Properties →
 In `wp_options`, encrypted at rest. It is only ever decrypted server-side for the API call.
 
 == Changelog ==
+
+= 1.2.6 =
+* Completed enquiries can now be mirrored to a HubSpot form (Forms API) so they trigger CRM workflows/automations (deal creation, automated outreach). Set the form GUID under Settings → SF Lead Form → HubSpot Form GUID; leave blank to disable. No automation trigger is lost to a missing form — the field is optional and the CRM contact is still created as before.
 
 = 1.0.0 =
 * Initial release: 7-step form, HubSpot CRM v3 integration, admin settings + logs.

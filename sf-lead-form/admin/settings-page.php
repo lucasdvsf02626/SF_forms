@@ -6,6 +6,7 @@
  *
  * @var bool   $has_token      Whether a token is already saved.
  * @var string $portal_id      Saved portal id.
+ * @var string $form_guid      Saved HubSpot form GUID (blank = automation mirror disabled).
  * @var string $secret         Shared secret.
  * @var string $settings_group Settings group name.
  *
@@ -55,6 +56,25 @@ defined( 'ABSPATH' ) || exit;
 					class="regular-text"
 				>
 				<p class="description"><?php esc_html_e( 'Your HubSpot account (hub) ID.', 'sf-lead-form' ); ?></p>
+			</td>
+		</tr>
+
+		<tr>
+			<th scope="row">
+				<label for="sf_lf_form_guid"><?php esc_html_e( 'HubSpot Form GUID', 'sf-lead-form' ); ?></label>
+			</th>
+			<td>
+				<input
+					type="text"
+					id="sf_lf_form_guid"
+					name="<?php echo esc_attr( SF_LEAD_FORM_OPT_FORM_GUID ); ?>"
+					value="<?php echo esc_attr( $form_guid ); ?>"
+					class="regular-text code"
+					placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+				>
+				<p class="description">
+					<?php esc_html_e( 'Optional. Paste the GUID of a HubSpot form to mirror each completed enquiry to, so it triggers your CRM workflows/automations (deal creation, automated emails). Find it in HubSpot → Marketing → Forms → your form (it appears in the form-editor URL). Leave blank to disable.', 'sf-lead-form' ); ?>
+				</p>
 			</td>
 		</tr>
 

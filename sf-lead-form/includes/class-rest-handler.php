@@ -199,6 +199,11 @@ class SF_Lead_Form_REST_Handler {
 			)
 		);
 
+		// Mirror the completed enquiry to a HubSpot form so it triggers CRM
+		// workflows/automations (deals, automated outreach). Best-effort + logged;
+		// never blocks the visitor or the lead capture. No-op unless a Form GUID is set.
+		$this->maybe_mirror_to_form( $result['data'], $request );
+
 		if ( ! empty( $hs['success'] ) ) {
 			if ( $lead_id ) {
 				$this->lead_store->mark_synced( $lead_id, (string) ( $hs['vid'] ?? '' ) );
@@ -388,6 +393,109 @@ class SF_Lead_Form_REST_Handler {
 		}
 
 		return $props;
+	}
+
+	/**
+	 * Mirror a completed enquiry to a HubSpot form (Forms API) so it raises a real
+	 * form-submission event and enrols the contact in form-triggered workflows
+	 * (deal creation, automated outreach). No-op unless a Form GUID is configured.
+	 * Best-effort: the result is logged but never affects the visitor response.
+	 *
+	 * @param array<string,string> $d       Validated form data.
+	 * @param WP_REST_Request      $request Request (for the tracking context).
+	 */
+	private function maybe_mirror_to_form( array $d, WP_REST_Request $request ): void {
+		$form_guid = trim( (string) get_option( SF_LEAD_FORM_OPT_FORM_GUID, '' ) );
+		if ( '' === $form_guid ) {
+			return;
+		}
+		$portal = (string) get_option( SF_LEAD_FORM_OPT_PORTAL, SF_LEAD_FORM_PORTAL_DEFAULT );
+
+		$res = $this->hubspot->submit_form(
+			$portal,
+			$form_guid,
+			$this->build_form_fields( $d ),
+			$this->form_context( $request )
+		);
+
+		$this->logger->log(
+			array(
+				'email'  => (string) ( $d['email'] ?? '' ),
+				'status' => ! empty( $res['success'] ) ? 'success' : 'error',
+				'action' => 'form_submit',
+				'error'  => empty( $res['success'] ) ? (string) ( $res['error'] ?? '' ) : null,
+			)
+		);
+	}
+
+	/**
+	 * Build the HubSpot Forms-API "fields" array from validated data. The field
+	 * names are the contact-property internal names; empty values are omitted.
+	 *
+	 * @param array<string,string> $d Validated data.
+	 * @return array<int,array<string,string>>
+	 */
+	private function build_form_fields( array $d ): array {
+		// HubSpot form field (contact property) => source key in the validated data.
+		$map = array(
+			'email'                    => 'email',
+			'firstname'                => 'firstname',
+			'lastname'                 => 'lastname',
+			'phone'                    => 'phone',
+			'company'                  => 'company_name',
+			'message'                  => 'product_brief',
+			'enquiry_type'             => 'enquiry_type',
+			'product_type'             => 'product_type',
+			'unit_quantity'            => 'unit_quantity',
+			'manufacturing_budget'     => 'manufacturing_budget',
+			'manufacturing_experience' => 'manufacturing_experience',
+			'journey_stage'            => 'journey_stage',
+		);
+
+		$fields = array();
+		foreach ( $map as $hs_name => $src ) {
+			$value = (string) ( $d[ $src ] ?? '' );
+			if ( '' !== $value ) {
+				$fields[] = array(
+					'objectTypeId' => '0-1',
+					'name'         => $hs_name,
+					'value'        => $value,
+				);
+			}
+		}
+		return $fields;
+	}
+
+	/**
+	 * Optional HubSpot tracking context for the form submission: the hubspotutk
+	 * cookie (only present if HubSpot's tracking code is installed) plus the page
+	 * URL/title, for source attribution. IP is deliberately omitted.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @return array<string,string>
+	 */
+	private function form_context( WP_REST_Request $request ): array {
+		$params = $request->get_json_params();
+		if ( ! is_array( $params ) ) {
+			$params = $request->get_params();
+		}
+
+		$context = array();
+
+		$hutk = sanitize_text_field( (string) ( $params['hutk'] ?? '' ) );
+		if ( '' !== $hutk ) {
+			$context['hutk'] = $hutk;
+		}
+		$page_uri = esc_url_raw( (string) ( $params['page_uri'] ?? '' ) );
+		if ( '' !== $page_uri ) {
+			$context['pageUri'] = $page_uri;
+		}
+		$page_name = sanitize_text_field( (string) ( $params['page_name'] ?? '' ) );
+		if ( '' !== $page_name ) {
+			$context['pageName'] = $page_name;
+		}
+
+		return $context;
 	}
 
 	/**
