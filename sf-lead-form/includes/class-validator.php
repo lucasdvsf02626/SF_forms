@@ -18,7 +18,7 @@ class SF_Lead_Form_Validator {
 			'Ready-Made Supplements (White Label)',
 			'Bespoke Supplement (Private Label)',
 		),
-		'product_type'             => array( 'Capsules', 'Powders', 'Gummies', 'Softgels', 'Duocaps', 'Licaps', 'Beadlets' ),
+		'product_type'             => array( 'Capsules', 'Powders', 'Gummies', 'Softgels' ),
 		'manufacturing_experience' => array( 'first_product', 'existing_products' ),
 		'unit_quantity'            => array( '200', '500', '750', '1000', '2000', '5000', '10000+' ),
 		'manufacturing_budget'     => array(
@@ -88,6 +88,11 @@ class SF_Lead_Form_Validator {
 		// --- Product brief (optional) ------------------------------------
 		$brief                 = sanitize_textarea_field( (string) ( $raw['product_brief'] ?? '' ) );
 		$data['product_brief'] = mb_substr( $brief, 0, 5000 );
+
+		// --- Consent (opt-in; drives the HubSpot legal-basis property) ----
+		// Captured, never required here: the standard form has no consent step,
+		// so requiring it would reject every standard submission.
+		$data['consent'] = ( 'yes' === (string) ( $raw['consent'] ?? '' ) ) ? 'yes' : '';
 
 		// --- Choice fields (required enums) ------------------------------
 		foreach ( self::ENUMS as $field => $allowed ) {

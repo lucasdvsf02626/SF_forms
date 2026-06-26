@@ -23,6 +23,52 @@ class SF_Lead_Form_REST_Handler {
 	private const RATE_WINDOW  = 10 * MINUTE_IN_SECONDS; // ...per IP per window.
 
 	/**
+	 * Front-end choice value → the value stored on the matching HubSpot property.
+	 * The form's option values are not what the portal stores, so each choice is
+	 * translated to exactly what HubSpot expects: for the enumeration properties
+	 * (`product_format`, `new_vs_existing`, `journey`) the stored option value
+	 * (case-sensitive, exact); for the free-text `enquiry_budget`, a readable label.
+	 * A value with no entry here is omitted, so a stray value is never written.
+	 */
+	private const PRODUCT_FORMAT_MAP = array(
+		'Capsules' => 'Capsule',
+		'Powders'  => 'Powder',
+		'Gummies'  => 'Gummy',
+		'Softgels' => 'SoftGels',
+	);
+
+	private const BUDGET_MAP = array(
+		'500-2000'     => '£500 – £2,000',
+		'2000-5000'    => '£2,000 – £5,000',
+		'5000-10000'   => '£5,000 – £10,000',
+		'10000-20000'  => '£10,000 – £20,000',
+		'20000-30000'  => '£20,000 – £30,000',
+		'30000-50000'  => '£30,000 – £50,000',
+		'50000-100000' => '£50,000 – £100,000',
+		'100000+'      => '£100,000+',
+	);
+
+	private const NEW_VS_EXISTING_MAP = array(
+		'first_product'     => 'This will be our first product to market',
+		'existing_products' => 'We currently have supplement products on the market',
+	);
+
+	private const JOURNEY_MAP = array(
+		'Exploring an idea'                        => 'Exploring an idea',
+		'Actively researching ingredients & costs' => 'Actively researching ingredients & costs',
+		'Formulation & business plan ready'        => 'Formulation & business plan ready',
+	);
+
+	/**
+	 * GDPR legal basis recorded on the contact when the consent box is ticked.
+	 * Property + value are filterable (sf_lead_form_legal_basis_property /
+	 * sf_lead_form_legal_basis_value) so they can be matched to the portal's exact
+	 * "Legal basis for processing contact's data" option without a code change.
+	 */
+	private const LEGAL_BASIS_PROPERTY = 'hs_legal_basis';
+	private const LEGAL_BASIS_VALUE    = 'Freely given consent from contact';
+
+	/**
 	 * Constructor.
 	 *
 	 * @param SF_Lead_Form_Validator       $validator  Validator.
@@ -191,11 +237,12 @@ class SF_Lead_Form_REST_Handler {
 		// Masked audit log (no raw PII).
 		$this->logger->log(
 			array(
-				'email'  => $result['data']['email'],
-				'status' => ! empty( $hs['success'] ) ? 'success' : 'error',
-				'action' => (string) ( $hs['action'] ?? '' ),
-				'vid'    => (string) ( $hs['vid'] ?? '' ),
-				'error'  => isset( $hs['error'] ) ? (string) $hs['error'] : null,
+				'email'   => $result['data']['email'],
+				'status'  => ! empty( $hs['success'] ) ? 'success' : 'error',
+				'action'  => (string) ( $hs['action'] ?? '' ),
+				'vid'     => (string) ( $hs['vid'] ?? '' ),
+				'error'   => isset( $hs['error'] ) ? (string) $hs['error'] : null,
+				'dropped' => $hs['dropped'] ?? array(),
 			)
 		);
 
@@ -278,11 +325,12 @@ class SF_Lead_Form_REST_Handler {
 
 		$this->logger->log(
 			array(
-				'email'  => $email,
-				'status' => ! empty( $hs['success'] ) ? 'success' : 'error',
-				'action' => 'partial',
-				'vid'    => (string) ( $hs['vid'] ?? '' ),
-				'error'  => isset( $hs['error'] ) ? (string) $hs['error'] : null,
+				'email'   => $email,
+				'status'  => ! empty( $hs['success'] ) ? 'success' : 'error',
+				'action'  => 'partial',
+				'vid'     => (string) ( $hs['vid'] ?? '' ),
+				'error'   => isset( $hs['error'] ) ? (string) $hs['error'] : null,
+				'dropped' => $hs['dropped'] ?? array(),
 			)
 		);
 
@@ -327,17 +375,21 @@ class SF_Lead_Form_REST_Handler {
 			}
 		}
 
-		$brief = sanitize_textarea_field( (string) ( $p['product_brief'] ?? '' ) );
-		if ( '' !== $brief ) {
-			$props['message'] = mb_substr( $brief, 0, 5000 );
+		$enquiry_type = sanitize_text_field( (string) ( $p['enquiry_type'] ?? '' ) );
+		if ( '' !== $enquiry_type ) {
+			$props['enquiry_type'] = $enquiry_type;
 		}
 
-		foreach ( array( 'enquiry_type', 'product_type', 'unit_quantity', 'manufacturing_budget', 'manufacturing_experience', 'journey_stage' ) as $key ) {
-			$val = sanitize_text_field( (string) ( $p[ $key ] ?? '' ) );
-			if ( '' !== $val ) {
-				$props[ $key ] = $val;
-			}
+		$brief = sanitize_textarea_field( (string) ( $p['product_brief'] ?? '' ) );
+		if ( '' !== $brief ) {
+			$props['product_brief'] = mb_substr( $brief, 0, 5000 );
 		}
+
+		// Choice fields, translated to the HubSpot properties used on the record.
+		$props = array_merge( $props, $this->map_choice_fields( $p ) );
+
+		// GDPR legal basis — the partial path only runs once consent was given.
+		$props = array_merge( $props, $this->consent_props( (string) ( $p['consent'] ?? '' ) ) );
 
 		$props['lifecyclestage'] = 'lead';
 		$props['hs_lead_status'] = 'NEW';
@@ -363,6 +415,71 @@ class SF_Lead_Form_REST_Handler {
 	}
 
 	/**
+	 * Translate the form's choice-field values into the HubSpot contact properties
+	 * actually used on the record (`product_format`, `product_quantity`,
+	 * `enquiry_budget`, `new_vs_existing`, `journey`). Empty or unmapped values are
+	 * omitted, so a partial submission never blanks an earlier value and a stray
+	 * value is never sent.
+	 *
+	 * @param array<string,mixed> $src Values keyed by form field: product_type,
+	 *                                 unit_quantity, manufacturing_budget,
+	 *                                 manufacturing_experience, journey_stage.
+	 * @return array<string,string>
+	 */
+	private function map_choice_fields( array $src ): array {
+		$out = array();
+
+		$format = self::PRODUCT_FORMAT_MAP[ (string) ( $src['product_type'] ?? '' ) ] ?? '';
+		if ( '' !== $format ) {
+			$out['product_format'] = $format;
+		}
+
+		// product_quantity is a NUMBER property: keep digits only ("10000+" -> "10000").
+		$qty = (string) preg_replace( '/\D/', '', (string) ( $src['unit_quantity'] ?? '' ) );
+		if ( '' !== $qty ) {
+			$out['product_quantity'] = $qty;
+		}
+
+		$budget = self::BUDGET_MAP[ (string) ( $src['manufacturing_budget'] ?? '' ) ] ?? '';
+		if ( '' !== $budget ) {
+			$out['enquiry_budget'] = $budget;
+		}
+
+		$experience = self::NEW_VS_EXISTING_MAP[ (string) ( $src['manufacturing_experience'] ?? '' ) ] ?? '';
+		if ( '' !== $experience ) {
+			$out['new_vs_existing'] = $experience;
+		}
+
+		$journey = self::JOURNEY_MAP[ (string) ( $src['journey_stage'] ?? '' ) ] ?? '';
+		if ( '' !== $journey ) {
+			$out['journey'] = $journey;
+		}
+
+		return $out;
+	}
+
+	/**
+	 * Record the GDPR legal basis on the contact when (and only when) the visitor
+	 * ticked the consent box. The target property/value are filterable so they can
+	 * be matched to the portal's exact "Legal basis" option without a code change.
+	 * Returns an empty array (writes nothing) when consent was not given.
+	 *
+	 * @param string $consent 'yes' when the box was ticked.
+	 * @return array<string,string>
+	 */
+	private function consent_props( string $consent ): array {
+		if ( 'yes' !== $consent ) {
+			return array();
+		}
+		$property = (string) apply_filters( 'sf_lead_form_legal_basis_property', self::LEGAL_BASIS_PROPERTY );
+		$value    = (string) apply_filters( 'sf_lead_form_legal_basis_value', self::LEGAL_BASIS_VALUE );
+		if ( '' === $property || '' === $value ) {
+			return array();
+		}
+		return array( $property => $value );
+	}
+
+	/**
 	 * Map validated form data to HubSpot contact properties.
 	 *
 	 * @param array<string,string> $d Validated data.
@@ -371,25 +488,26 @@ class SF_Lead_Form_REST_Handler {
 	private function map_to_hubspot( array $d ): array {
 		$props = array(
 			// Standard properties.
-			'firstname'                => $d['firstname'],
-			'lastname'                 => $d['lastname'],
-			'email'                    => $d['email'],
-			'phone'                    => $d['phone'],
-			'company'                  => $d['company_name'],
-			// Custom properties (must exist in the portal).
-			'enquiry_type'             => $d['enquiry_type'],
-			'product_type'             => $d['product_type'],
-			'manufacturing_experience' => $d['manufacturing_experience'],
-			'unit_quantity'            => $d['unit_quantity'],
-			'manufacturing_budget'     => $d['manufacturing_budget'],
-			'journey_stage'            => $d['journey_stage'],
+			'firstname'      => $d['firstname'],
+			'lastname'       => $d['lastname'],
+			'email'          => $d['email'],
+			'phone'          => $d['phone'],
+			'company'        => $d['company_name'],
+			// Enumeration property (option values match the portal as-is).
+			'enquiry_type'   => $d['enquiry_type'],
 			// Lead context.
-			'lifecyclestage'           => 'lead',
-			'hs_lead_status'           => 'NEW',
+			'lifecyclestage' => 'lead',
+			'hs_lead_status' => 'NEW',
 		);
 
+		// Choice fields, translated to the HubSpot properties used on the record.
+		$props = array_merge( $props, $this->map_choice_fields( $d ) );
+
+		// GDPR legal basis — recorded only when the consent box was ticked.
+		$props = array_merge( $props, $this->consent_props( (string) ( $d['consent'] ?? '' ) ) );
+
 		if ( '' !== $d['product_brief'] ) {
-			$props['message'] = $d['product_brief'];
+			$props['product_brief'] = $d['product_brief'];
 		}
 
 		return $props;
@@ -436,30 +554,28 @@ class SF_Lead_Form_REST_Handler {
 	 * @return array<int,array<string,string>>
 	 */
 	private function build_form_fields( array $d ): array {
-		// HubSpot form field (contact property) => source key in the validated data.
-		$map = array(
-			'email'                    => 'email',
-			'firstname'                => 'firstname',
-			'lastname'                 => 'lastname',
-			'phone'                    => 'phone',
-			'company'                  => 'company_name',
-			'message'                  => 'product_brief',
-			'enquiry_type'             => 'enquiry_type',
-			'product_type'             => 'product_type',
-			'unit_quantity'            => 'unit_quantity',
-			'manufacturing_budget'     => 'manufacturing_budget',
-			'manufacturing_experience' => 'manufacturing_experience',
-			'journey_stage'            => 'journey_stage',
+		// Mirror the same contact properties (and translated values) written to the
+		// CRM, so the HubSpot form's fields line up 1:1 with the contact record.
+		$props = array(
+			'email'        => (string) ( $d['email'] ?? '' ),
+			'firstname'    => (string) ( $d['firstname'] ?? '' ),
+			'lastname'     => (string) ( $d['lastname'] ?? '' ),
+			'phone'        => (string) ( $d['phone'] ?? '' ),
+			'company'      => (string) ( $d['company_name'] ?? '' ),
+			'enquiry_type' => (string) ( $d['enquiry_type'] ?? '' ),
 		);
+		$props = array_merge( $props, $this->map_choice_fields( $d ) );
+		if ( '' !== (string) ( $d['product_brief'] ?? '' ) ) {
+			$props['product_brief'] = (string) $d['product_brief'];
+		}
 
 		$fields = array();
-		foreach ( $map as $hs_name => $src ) {
-			$value = (string) ( $d[ $src ] ?? '' );
-			if ( '' !== $value ) {
+		foreach ( $props as $name => $value ) {
+			if ( '' !== (string) $value ) {
 				$fields[] = array(
 					'objectTypeId' => '0-1',
-					'name'         => $hs_name,
-					'value'        => $value,
+					'name'         => $name,
+					'value'        => (string) $value,
 				);
 			}
 		}

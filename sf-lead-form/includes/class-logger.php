@@ -75,20 +75,30 @@ class SF_Lead_Form_Logger {
 	/**
 	 * Write a log row.
 	 *
-	 * @param array{email?:string,status?:string,action?:string,vid?:string,error?:string} $data Row data.
+	 * @param array{email?:string,status?:string,action?:string,vid?:string,error?:string,dropped?:array<int,string>} $data Row data.
 	 */
 	public function log( array $data ): void {
 		global $wpdb;
 
+		// Combine any error with the list of properties HubSpot ignored, so a
+		// silent mapping mismatch (missing property / invalid option) is visible
+		// in the Logs tab even when the contact itself still saved.
+		$message = isset( $data['error'] ) ? (string) $data['error'] : '';
+		if ( ! empty( $data['dropped'] ) && is_array( $data['dropped'] ) ) {
+			$note    = __( 'HubSpot ignored (not on portal / invalid option): ', 'sf-lead-form' )
+				. implode( ', ', array_map( 'strval', $data['dropped'] ) );
+			$message = '' !== $message ? $message . ' | ' . $note : $note;
+		}
+
 		$wpdb->insert(
 			self::table(),
 			array(
-				'email_masked' => self::mask_email( (string) ( $data['email'] ?? '' ) ),
-				'status'       => substr( (string) ( $data['status'] ?? '' ), 0, 20 ),
-				'action'       => substr( (string) ( $data['action'] ?? '' ), 0, 20 ),
-				'hubspot_vid'  => substr( (string) ( $data['vid'] ?? '' ), 0, 32 ),
-				'error_message' => isset( $data['error'] ) ? (string) $data['error'] : null,
-				'submitted_at' => current_time( 'mysql' ),
+				'email_masked'  => self::mask_email( (string) ( $data['email'] ?? '' ) ),
+				'status'        => substr( (string) ( $data['status'] ?? '' ), 0, 20 ),
+				'action'        => substr( (string) ( $data['action'] ?? '' ), 0, 20 ),
+				'hubspot_vid'   => substr( (string) ( $data['vid'] ?? '' ), 0, 32 ),
+				'error_message' => '' !== $message ? $message : null,
+				'submitted_at'  => current_time( 'mysql' ),
 			),
 			array( '%s', '%s', '%s', '%s', '%s', '%s' )
 		);

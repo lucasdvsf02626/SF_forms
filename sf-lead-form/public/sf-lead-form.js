@@ -796,9 +796,22 @@
 
 	function fullPhone() {
 		var d = state.data;
-		if (!d._phoneNumber) { return ''; }
-		var national = (d._phoneNumber || '').replace(/\D/g, '').replace(/^0+/, '');
-		return (d._phoneCode || '+44') + national;
+		var raw = (d._phoneNumber || '').trim();
+		if (!raw) { return ''; }
+		var code = d._phoneCode || '+44';
+		var codeDigits = code.replace(/\D/g, '');
+		var digits = raw.replace(/\D/g, '');
+		// If the visitor typed the international prefix themselves (e.g. "+44 7700…"
+		// or "0044 7700…"), the country selector would otherwise add the code twice.
+		// Strip a leading "00"/"0" and a duplicated country code before re-adding it.
+		if (/^(\+|00)/.test(raw)) {
+			digits = digits.replace(/^0+/, '');
+			if (codeDigits && digits.indexOf(codeDigits) === 0) {
+				digits = digits.slice(codeDigits.length);
+			}
+		}
+		digits = digits.replace(/^0+/, '');
+		return code + digits;
 	}
 
 	function maybePostPartial() {

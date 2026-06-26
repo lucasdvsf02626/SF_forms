@@ -3,7 +3,7 @@
  * Plugin Name:       SF Lead Form
  * Plugin URI:        https://github.com/lucasdvsf02626/SF_forms
  * Description:        Self-owned multi-step lead capture form (GrowForms replacement) that sends submissions straight to HubSpot CRM as contacts. Vanilla JS + PHP, zero dependencies. Embed with [sf_lead_form].
- * Version:           1.2.6
+ * Version:           1.2.9
  * Requires at least: 6.0
  * Requires PHP:      8.0
  * Author:            Supplement Factory
@@ -20,7 +20,7 @@ defined( 'ABSPATH' ) || exit;
 /* -------------------------------------------------------------------------
  * Constants
  * ---------------------------------------------------------------------- */
-define( 'SF_LEAD_FORM_VERSION', '1.2.6' );
+define( 'SF_LEAD_FORM_VERSION', '1.2.9' );
 define( 'SF_LEAD_FORM_FILE', __FILE__ );
 define( 'SF_LEAD_FORM_PATH', plugin_dir_path( __FILE__ ) );
 define( 'SF_LEAD_FORM_URL', plugin_dir_url( __FILE__ ) );
